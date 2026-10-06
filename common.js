@@ -7,11 +7,31 @@ export function isConfigured() {
   return Boolean(CONFIG.GAS_URL && CONFIG.CLIENT_ID && CONFIG.API_KEY);
 }
 
-/** Apps Script へ送る。text/plain で送り、事前確認（CORSのプリフライト）を起こさない */
+/**
+ * Apps Script へ送る。text/plain で送り、事前確認（CORSのプリフライト）を起こさない。
+ * Google 側の中継が2割ほどの確率で応答を落とすため、同じ rid で最大5回まで送り直す
+ * （Apps Script 側は同じ rid の操作を二重に実行しない）
+ */
 export async function callGas(payload) {
-  const res = await fetch(CONFIG.GAS_URL, { method: 'POST', body: JSON.stringify(payload) });
-  if (!res.ok) throw new Error('gas_http_' + res.status);
-  return res.json();
+  const body = JSON.stringify({ ...payload, rid: randomId() });
+  let lastErr = null;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, 400 * 2 ** (attempt - 1)));
+    try {
+      const res = await fetch(CONFIG.GAS_URL, { method: 'POST', body });
+      if (!res.ok) throw new Error('gas_http_' + res.status);
+      return await res.json();
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr;
+}
+
+function randomId() {
+  const b = new Uint8Array(16);
+  crypto.getRandomValues(b);
+  return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
 }
 
 export function formatBytes(n) {
