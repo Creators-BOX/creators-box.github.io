@@ -1,6 +1,6 @@
 // 送信ページ：ログイン → 暗号化してDriveへ → 台帳に登録 → URLとパスワードを渡す
 import { CONFIG } from './config.js';
-import { $, callGas, copyText, formatBytes, formatDate, isConfigured, toast } from './common.js';
+import { $, callGas, copyText, formatBytes, formatDate, isConfigured, startBridge, toast } from './common.js';
 import { createEncryptor, generatePassword, generateShareId } from './fcrypto.js';
 import { uploadEncrypted, AuthExpiredError } from './upload.js';
 
@@ -27,6 +27,7 @@ function init() {
     $('#login').disabled = true;
     return;
   }
+  startBridge(); // ログインを押すまでに通り道を用意しておく
   $('#login').addEventListener('click', login);
   $('#pw').value = generatePassword();
   $('#regen').addEventListener('click', () => { $('#pw').value = generatePassword(); });
