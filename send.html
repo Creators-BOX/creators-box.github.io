@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>ファイル送信</title>
+<link rel="stylesheet" href="app.css">
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script type="module" src="send.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>ファイル送信</h1>
+    <div class="row">
+      <span id="who" class="note" style="margin:0"></span>
+      <button id="login" class="primary" title="feerepitol@gmail.com でログインします">Googleでログイン</button>
+    </div>
+  </header>
+
+  <div id="setupMsg" class="msg err hidden">config.js に GAS_URL・CLIENT_ID・API_KEY が入っていません。README の手順で設定してください。</div>
+
+  <section id="main" class="hidden">
+    <div class="card">
+      <h2>1．ファイルを選ぶ</h2>
+      <div id="drop" class="drop" tabindex="0" title="クリックしてファイルを選ぶか、ここへドラッグしてください">
+        <strong>ここにファイルをドラッグ</strong>
+        <span class="note">またはクリックして選ぶ（1つだけ。複数のときはzipにまとめてください）</span>
+      </div>
+      <input id="file" type="file" class="hidden">
+      <p id="picked" class="msg info hidden"></p>
+    </div>
+
+    <div class="card">
+      <h2>2．設定</h2>
+      <label class="field"><span>ダウンロード期限</span>
+        <select id="days" title="期限を過ぎると、ファイルは自動で完全に削除されます"></select>
+      </label>
+      <label class="field"><span>宛先メモ（任意・自分用）</span>
+        <input id="memo" type="text" placeholder="例：岡島様 ライザ 配置合成" title="一覧と通知メールに出ます。相手には見えません">
+      </label>
+      <div class="field">
+        <span>パスワード（自動で作成）</span>
+        <div class="row">
+          <input id="pw" type="text" class="mono" readonly style="flex:1;min-width:220px" title="このパスワードで暗号化します。台帳にも控えが残ります">
+          <button id="regen" title="別のパスワードを作り直します">作り直す</button>
+        </div>
+      </div>
+      <div class="row">
+        <button id="send" class="primary" disabled title="ファイルを暗号化してから送ります">暗号化して送る</button>
+        <button id="cancel" class="hidden" title="送信を止めます">中止</button>
+      </div>
+      <div id="prog" class="hidden">
+        <div class="progress"><div id="bar"></div></div>
+        <p id="progText" class="note"></p>
+      </div>
+      <p id="sendErr" class="msg err hidden"></p>
+    </div>
+
+    <div id="result" class="card hidden">
+      <h2>送信の準備ができました</h2>
+      <dl class="kv">
+        <dt>URL</dt><dd id="rUrl" class="mono"></dd><button class="small" data-copy="url" title="URLだけをコピーします">コピー</button>
+        <dt>パスワード</dt><dd id="rPw" class="mono"></dd><button class="small" data-copy="pw" title="パスワードだけをコピーします">コピー</button>
+        <dt>期限</dt><dd id="rExp"></dd><span></span>
+      </dl>
+      <div class="row" style="margin-top:16px">
+        <button data-copy="all" class="primary" title="URL・パスワード・期限をまとめてコピーします">まとめてコピー</button>
+      </div>
+      <p class="note">URLとパスワードを別々の連絡で送ると、より安全です。</p>
+    </div>
+
+    <div class="card">
+      <div class="row" style="justify-content:space-between;margin-bottom:12px">
+        <h2 style="margin:0">送ったファイル</h2>
+        <button id="reload" class="small" title="一覧を読み込み直します">更新</button>
+      </div>
+      <div id="list" class="list"><p class="note">読み込み中…</p></div>
+    </div>
+  </section>
+</div>
+</body>
+</html>

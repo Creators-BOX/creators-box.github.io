@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="strict-origin">
+<title>ファイルの受け取り</title>
+<link rel="stylesheet" href="app.css">
+<script type="module" src="dl.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1 data-i18n="title">ファイルの受け取り</h1>
+    <button id="lang" class="small" data-i18n="langBtn" data-i18n-title="langTitle" title="Switch to English">English</button>
+  </header>
+
+  <div class="card">
+    <p id="status" class="msg info" data-i18n="loading">確認しています…</p>
+
+    <form id="pwForm" class="hidden" autocomplete="off">
+      <p id="expiry" class="note" style="margin:0 0 16px"></p>
+      <label class="field"><span data-i18n="pwLabel">パスワード</span>
+        <input id="pw" type="text" class="mono" inputmode="text" autocapitalize="off" spellcheck="false" data-i18n-placeholder="pwPlaceholder" placeholder="送り主から届いたパスワード">
+      </label>
+      <button id="check" type="submit" class="primary" data-i18n="checkBtn" data-i18n-title="checkTitle" title="パスワードを確認します">確認する</button>
+      <p id="pwErr" class="msg err hidden"></p>
+    </form>
+
+    <div id="ready" class="hidden">
+      <dl class="kv" style="grid-template-columns:7em minmax(0,1fr)">
+        <dt data-i18n="fileName">ファイル名</dt><dd id="fname"></dd>
+        <dt data-i18n="fileSize">サイズ</dt><dd id="fsize"></dd>
+      </dl>
+      <div class="row" style="margin-top:16px">
+        <button id="save" class="primary" data-i18n="saveBtn" data-i18n-title="saveTitle" title="保存先を選んでダウンロードします">保存する</button>
+      </div>
+      <div id="prog" class="hidden">
+        <div class="progress"><div id="bar"></div></div>
+        <p id="progText" class="note"></p>
+      </div>
+      <p id="saveMsg" class="msg hidden"></p>
+      <p id="browserNote" class="note hidden" data-i18n="browserNote">大きいファイルは、パソコンの Chrome か Edge で開くと確実に保存できます。</p>
+    </div>
+  </div>
+
+  <p class="note" data-i18n="footer">ファイルは送り主のパソコンで暗号化されています。パスワードを入れると、このブラウザの中で元に戻します。</p>
+</div>
+</body>
+</html>
