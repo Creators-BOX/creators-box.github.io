@@ -1,4 +1,4 @@
-// 送信ページ：ログイン → 暗号化してDriveへ → 台帳に登録 → URLとパスワードを渡す
+// 送信ページ：ログイン（または登録済みの端末）→ 暗号化してDriveへ → 台帳に登録 → URLとパスワードを渡す
 import { CONFIG } from './config.js';
 import { $, callGas, copyText, formatBytes, formatDate, isConfigured, startBridge, toast } from './common.js';
 import { createEncryptor, generatePassword, generateShareId } from './fcrypto.js';
@@ -7,10 +7,12 @@ import { uploadEncrypted, AuthExpiredError } from './upload.js';
 const SCOPE = 'https://www.googleapis.com/auth/drive.file openid email';
 const OWNER_HINT = 'feerepitol@gmail.com';
 const FOLDER_NAME = '暗号化ファイル転送_データ';
+const DEVICE_STORE = 'ft_device'; // この端末の合言葉 { id, key, name }
 
 let tokenClient = null;
 let token = null;
 let tokenExpiresAt = 0;
+let device = loadDevice();
 let folderId = null;
 let pickedFile = null;
 let busy = false;
@@ -18,6 +20,38 @@ let abort = null;
 let lastResult = null;
 
 const dlUrl = (id) => new URL('./', location.href).href + '#' + id;
+
+/** 送信ページの操作に付ける本人確認。登録した端末なら合言葉、そうでなければ Google のログイン */
+const auth = () => (device ? { deviceKey: device.key } : { token });
+
+function loadDevice() {
+  try {
+    const d = JSON.parse(localStorage.getItem(DEVICE_STORE) || 'null');
+    return d && d.key ? d : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveDevice(d) {
+  device = d;
+  try {
+    if (d) localStorage.setItem(DEVICE_STORE, JSON.stringify(d));
+    else localStorage.removeItem(DEVICE_STORE);
+  } catch {
+    /* 保存できない環境では、このページを開いている間だけ有効 */
+  }
+}
+
+function guessDeviceName() {
+  const ua = navigator.userAgent;
+  if (/iPad|Macintosh/.test(ua) && navigator.maxTouchPoints > 1) return 'iPad';
+  if (/iPhone/.test(ua)) return 'iPhone';
+  if (/Android/.test(ua)) return /Mobile/.test(ua) ? 'Androidスマホ' : 'Androidタブレット';
+  if (/Windows/.test(ua)) return 'Windows PC';
+  if (/Macintosh/.test(ua)) return 'Mac';
+  return 'この端末';
+}
 
 init();
 
@@ -29,6 +63,15 @@ function init() {
   }
   startBridge(); // ログインを押すまでに通り道を用意しておく
   $('#login').addEventListener('click', login);
+  $('#regName').value = guessDeviceName();
+  if (matchMedia('(pointer: coarse)').matches) {
+    // スマホ・タブレットはドラッグできないので、タップで選ぶ案内にする
+    $('#drop strong').textContent = 'タップしてファイルを選ぶ';
+    $('#drop .note').textContent = '1つだけ。複数のときはzipにまとめてください';
+  }
+  $('#register').addEventListener('click', registerDevice);
+  $('#unregister').addEventListener('click', unregisterThisDevice);
+  $('#reloadDevices').addEventListener('click', loadDevices);
   $('#pw').value = generatePassword();
   $('#regen').addEventListener('click', () => { $('#pw').value = generatePassword(); });
   $('#drop').addEventListener('click', () => $('#file').click());
@@ -46,6 +89,7 @@ function init() {
   $('#reload').addEventListener('click', loadList);
   document.querySelectorAll('[data-copy]').forEach((b) => b.addEventListener('click', () => copyResult(b.dataset.copy)));
   window.addEventListener('beforeunload', (e) => { if (busy) e.preventDefault(); });
+  if (device) enterApp();
 }
 
 function login() {
@@ -73,30 +117,152 @@ async function onToken(resp) {
   }
   token = resp.access_token;
   tokenExpiresAt = Date.now() + Number(resp.expires_in || 3600) * 1000;
+  await enterApp();
+}
+
+/** 本人確認が済んだら、設定を読み込んで画面を開く */
+async function enterApp() {
+  $('#loading').classList.remove('hidden');
   try {
-    const cfg = await callGas({ action: 'config', token });
+    const cfg = await callGas({ action: 'config', ...auth() });
     if (!cfg.ok) {
-      showLoginError(cfg.error === 'unauthorized' ? 'このアカウントでは使えません。feerepitol@gmail.com でログインしてください' : '設定を読み込めませんでした');
+      if (device && cfg.error === 'unauthorized') {
+        saveDevice(null);
+        showLoginError('この端末の登録は取り消されています。Googleでログインし、登録し直してください');
+      } else {
+        showLoginError(cfg.error === 'unauthorized' ? 'このアカウントでは使えません。feerepitol@gmail.com でログインしてください' : '設定を読み込めませんでした');
+      }
       return;
     }
-    folderId = cfg.folderId || (await createFolder());
+    folderId = cfg.folderId || (device ? null : await createFolder());
     fillDays(cfg.expiryDays || [3, 7, 14, 30, 60, 120, 180]);
-    $('#who').textContent = cfg.owner;
+    $('#who').textContent = device ? `この端末（${device.name}）は登録済み` : cfg.owner;
+    $('#login').classList.toggle('hidden', Boolean(device));
     $('#login').textContent = 'ログインし直す';
     $('#login').classList.remove('primary');
+    $('#unregister').classList.toggle('hidden', !device);
+    $('#registerCard').classList.toggle('hidden', Boolean(device));
     $('#main').classList.remove('hidden');
+    $('#loginMsg').classList.add('hidden');
     updateSendButton();
     loadList();
+    loadDevices();
   } catch (err) {
     showLoginError('通信に失敗しました。時間をおいてもう一度お試しください');
     console.error(err);
+  } finally {
+    $('#loading').classList.add('hidden');
   }
 }
 
 function showLoginError(text) {
   token = null;
   $('#main').classList.add('hidden');
-  toast(text);
+  $('#login').classList.remove('hidden');
+  $('#unregister').classList.add('hidden');
+  $('#who').textContent = '';
+  const m = $('#loginMsg');
+  m.textContent = text;
+  m.classList.remove('hidden');
+}
+
+/** Google でログインした状態で、この端末を登録する（次回からログイン不要） */
+async function registerDevice() {
+  const name = $('#regName').value.trim() || guessDeviceName();
+  const btn = $('#register');
+  btn.disabled = true;
+  try {
+    const r = await callGas({ action: 'registerDevice', token, name });
+    if (!r.ok) throw new Error(r.error);
+    saveDevice({ id: r.deviceId, key: r.deviceKey, name: r.name });
+    toast('この端末を登録しました。次回からログインなしで使えます');
+    await enterApp();
+  } catch (err) {
+    console.error(err);
+    toast('登録できませんでした。もう一度お試しください');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/** この端末の登録を解除する（サーバー側の登録も取り消す） */
+async function unregisterThisDevice() {
+  const btn = $('#unregister');
+  if (!btn.classList.contains('armed')) {
+    btn.classList.add('armed');
+    btn.textContent = 'もう一度押すと解除';
+    setTimeout(() => { btn.classList.remove('armed'); btn.textContent = 'この端末の登録を解除'; }, 4000);
+    return;
+  }
+  btn.disabled = true;
+  try {
+    await callGas({ action: 'revokeDevice', ...auth(), id: device.id });
+  } catch (err) {
+    console.error(err);
+  }
+  saveDevice(null);
+  btn.disabled = false;
+  btn.classList.remove('armed');
+  btn.textContent = 'この端末の登録を解除';
+  showLoginError('この端末の登録を解除しました。使うときはGoogleでログインしてください');
+}
+
+async function loadDevices() {
+  const box = $('#devices');
+  try {
+    const r = await callGas({ action: 'listDevices', ...auth() });
+    if (!r.ok) throw new Error(r.error);
+    box.textContent = '';
+    if (!r.items.length) {
+      box.innerHTML = '<p class="note">登録した端末はありません。</p>';
+      return;
+    }
+    for (const d of r.items) {
+      const el = document.createElement('div');
+      el.className = 'item';
+      const head = document.createElement('div');
+      head.className = 'row';
+      head.style.justifyContent = 'space-between';
+      const name = document.createElement('div');
+      name.className = 'name';
+      name.textContent = d.name + (device && device.id === d.id ? '（この端末）' : '');
+      const btn = document.createElement('button');
+      btn.className = 'small danger';
+      btn.textContent = '登録を取り消す';
+      btn.title = 'この端末からは、ログインなしで使えなくなります';
+      btn.addEventListener('click', async () => {
+        if (!btn.classList.contains('armed')) {
+          btn.classList.add('armed');
+          btn.textContent = 'もう一度押すと取り消し';
+          setTimeout(() => { btn.classList.remove('armed'); btn.textContent = '登録を取り消す'; }, 4000);
+          return;
+        }
+        btn.disabled = true;
+        const self = device && device.id === d.id;
+        try {
+          const res = await callGas({ action: 'revokeDevice', ...auth(), id: d.id });
+          if (!res.ok) throw new Error(res.error);
+          toast('登録を取り消しました');
+        } catch (err) {
+          console.error(err);
+          toast('取り消せませんでした');
+        }
+        if (self) {
+          saveDevice(null);
+          showLoginError('この端末の登録を取り消しました。使うときはGoogleでログインしてください');
+        } else loadDevices();
+      });
+      head.append(name, btn);
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      meta.textContent = `登録 ${formatDate(d.created)} ・ 最後に使用 ${formatDate(d.lastUsed)}`;
+      el.append(head, meta);
+      box.appendChild(el);
+    }
+  } catch (err) {
+    console.error(err);
+    box.innerHTML = '<p class="msg err">端末の一覧を読み込めませんでした。「更新」を押してください。</p>';
+  }
 }
 
 /** 初回だけ：暗号化ファイルの保管フォルダを作って登録する */
@@ -108,7 +274,7 @@ async function createFolder() {
   });
   if (!res.ok) throw new Error('folder_create_' + res.status);
   const { id } = await res.json();
-  const r = await callGas({ action: 'setFolder', token, folderId: id });
+  const r = await callGas({ action: 'setFolder', ...auth(), folderId: id });
   if (!r.ok) throw new Error('folder_register');
   return id;
 }
@@ -135,12 +301,12 @@ function pick(file) {
 }
 
 function updateSendButton() {
-  $('#send').disabled = busy || !pickedFile || !token;
+  $('#send').disabled = busy || !pickedFile || !(token || device);
 }
 
 async function send() {
   if (!pickedFile || busy) return;
-  if (Date.now() > tokenExpiresAt - 5 * 60 * 1000) {
+  if (!device && Date.now() > tokenExpiresAt - 5 * 60 * 1000) {
     toast('ログインの有効期限が近いため、もう一度ログインしてください');
     login();
     return;
@@ -163,7 +329,16 @@ async function send() {
   try {
     const enc = await createEncryptor(file, password);
     const started = Date.now();
-    const fileId = await uploadEncrypted(enc, folderId, token, (done, total) => {
+    // 登録した端末は、送り先を Apps Script に用意してもらう。Google でログイン中なら自分で用意する
+    let target;
+    if (device) {
+      const s = await callGas({ action: 'startUpload', ...auth(), size: enc.totalSize });
+      if (!s.ok) throw new Error(s.message || s.error);
+      target = { sessionUrl: s.sessionUrl };
+    } else {
+      target = { folderId, token };
+    }
+    const fileId = await uploadEncrypted(enc, target, (done, total) => {
       const sec = (Date.now() - started) / 1000;
       const speed = sec > 1 ? ` ・ ${formatBytes(done / sec)}/秒` : '';
       setProgress(done / total, `暗号化して送信中… ${formatBytes(done)} / ${formatBytes(total)}${speed}`);
@@ -171,7 +346,7 @@ async function send() {
 
     setProgress(1, '台帳に登録中…');
     const r = await callGas({
-      action: 'create', token, shareId, fileId, days, memo, password,
+      action: 'create', ...auth(), shareId, fileId, days, memo, password,
       name: file.name, size: file.size, authHex: enc.authHex, salt: enc.salt,
     });
     if (!r.ok) throw new Error(r.message || r.error);
@@ -225,7 +400,7 @@ async function copyResult(kind) {
 async function loadList() {
   const box = $('#list');
   try {
-    const r = await callGas({ action: 'list', token });
+    const r = await callGas({ action: 'list', ...auth() });
     if (!r.ok) throw new Error(r.error);
     box.textContent = '';
     if (!r.items.length) {
@@ -290,7 +465,7 @@ function renderItem(it) {
       revoke.disabled = true;
       revoke.textContent = '削除中…';
       try {
-        const r = await callGas({ action: 'revoke', token, id: it.id });
+        const r = await callGas({ action: 'revoke', ...auth(), id: it.id });
         if (!r.ok) throw new Error(r.error);
         toast('無効にしました');
       } catch (err) {

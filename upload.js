@@ -2,36 +2,22 @@
 import { ByteQueue } from './fcrypto.js';
 import { CONFIG } from './config.js';
 
-const PIECE = 32 * 1024 * 1024; // 256KiB の倍数であること（Drive の決まり）
+// 256KiB の倍数であること（Drive の決まり）。スマホのメモリも考えて 16MB ずつ送る
+const PIECE = 16 * 1024 * 1024;
 const MAX_RETRY = 6;
 
 export class AuthExpiredError extends Error {}
 
 /**
  * @param enc       createEncryptor の返り値
- * @param folderId  保管フォルダ
- * @param token     アクセストークン
+ * @param target    送り先。{ sessionUrl }（Apps Script が用意したもの）か、{ folderId, token }（Google でログイン中）
  * @param onProgress(送った量, 全体)
  * @param signal    中止用
  * @returns Drive のファイルID
  */
-export async function uploadEncrypted(enc, folderId, token, onProgress, signal) {
+export async function uploadEncrypted(enc, target, onProgress, signal) {
   const total = enc.totalSize;
-  const init = await fetch(`${CONFIG.DRIVE_BASE}/upload/drive/v3/files?uploadType=resumable&fields=id`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json; charset=UTF-8',
-      'X-Upload-Content-Type': 'application/octet-stream',
-      'X-Upload-Content-Length': String(total),
-    },
-    body: JSON.stringify({ name: `ft_${Date.now()}_${Math.random().toString(36).slice(2, 10)}.bin`, parents: [folderId], mimeType: 'application/octet-stream' }),
-    signal,
-  });
-  if (init.status === 401) throw new AuthExpiredError();
-  if (!init.ok) throw new Error(`upload_init_${init.status}`);
-  const session = init.headers.get('Location');
-  if (!session) throw new Error('upload_no_session');
+  const session = target.sessionUrl || (await openSession(total, target.folderId, target.token, signal));
 
   let offset = 0; // Drive が受け取り済みのバイト数
   let fileId = null;
@@ -83,6 +69,26 @@ export async function uploadEncrypted(enc, folderId, token, onProgress, signal) 
   if (q.length > 0) await sendPiece(q.take(q.length));
   if (!fileId) throw new Error('upload_no_file_id');
   return fileId;
+}
+
+/** Google でログイン中のとき：ブラウザが自分で送り先を用意する */
+async function openSession(total, folderId, token, signal) {
+  const init = await fetch(`${CONFIG.DRIVE_BASE}/upload/drive/v3/files?uploadType=resumable&fields=id`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json; charset=UTF-8',
+      'X-Upload-Content-Type': 'application/octet-stream',
+      'X-Upload-Content-Length': String(total),
+    },
+    body: JSON.stringify({ name: `ft_${Date.now()}_${Math.random().toString(36).slice(2, 10)}.bin`, parents: [folderId], mimeType: 'application/octet-stream' }),
+    signal,
+  });
+  if (init.status === 401) throw new AuthExpiredError();
+  if (!init.ok) throw new Error(`upload_init_${init.status}`);
+  const session = init.headers.get('Location');
+  if (!session) throw new Error('upload_no_session');
+  return session;
 }
 
 /** Range: bytes=0-N の N+1。ヘッダーが読めないときは送った分すべて届いたとみなす */

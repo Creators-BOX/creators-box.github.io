@@ -16,12 +16,24 @@
     <div class="row">
       <span id="who" class="note" style="margin:0"></span>
       <button id="login" class="primary" title="feerepitol@gmail.com でログインします">Googleでログイン</button>
+      <button id="unregister" class="small danger hidden" title="この端末では、次回からGoogleでのログインが必要になります">この端末の登録を解除</button>
     </div>
   </header>
 
   <div id="setupMsg" class="msg err hidden">config.js に GAS_URL・CLIENT_ID・API_KEY が入っていません。README の手順で設定してください。</div>
+  <p id="loading" class="msg info hidden">読み込んでいます…</p>
+  <p id="loginMsg" class="msg err hidden"></p>
 
   <section id="main" class="hidden">
+    <div id="registerCard" class="card hidden">
+      <h2>この端末を登録する</h2>
+      <p class="note" style="margin:0 0 12px">登録すると、この端末では次回からGoogleでのログインなしで使えます。画面ロックをかけている端末だけ登録してください。</p>
+      <div class="row">
+        <input id="regName" type="text" style="flex:1;min-width:180px" title="一覧で見分けるための名前です" aria-label="端末の名前">
+        <button id="register" class="primary" title="この端末を登録します">登録する</button>
+      </div>
+    </div>
+
     <div class="card">
       <h2>1．ファイルを選ぶ</h2>
       <div id="drop" class="drop" tabindex="0" title="クリックしてファイルを選ぶか、ここへドラッグしてください">
@@ -77,6 +89,15 @@
         <button id="reload" class="small" title="一覧を読み込み直します">更新</button>
       </div>
       <div id="list" class="list"><p class="note">読み込み中…</p></div>
+    </div>
+
+    <div class="card">
+      <div class="row" style="justify-content:space-between;margin-bottom:12px">
+        <h2 style="margin:0">登録した端末</h2>
+        <button id="reloadDevices" class="small" title="一覧を読み込み直します">更新</button>
+      </div>
+      <div id="devices" class="list"><p class="note">読み込み中…</p></div>
+      <p class="note">端末をなくしたときや手放すときは、ここで登録を取り消してください。</p>
     </div>
   </section>
 </div>
