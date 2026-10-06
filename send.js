@@ -403,6 +403,10 @@ async function loadList() {
     const r = await callGas({ action: 'list', ...auth() });
     if (!r.ok) throw new Error(r.error);
     box.textContent = '';
+    const finished = r.items.filter((it) => it.status !== '有効').map((it) => it.id);
+    const all = $('#hideAll');
+    all.classList.toggle('hidden', !finished.length);
+    all.onclick = () => hideItems(finished, all);
     if (!r.items.length) {
       box.innerHTML = '<p class="note">まだありません。</p>';
       return;
@@ -476,8 +480,33 @@ function renderItem(it) {
     });
     actions.append(copy, revoke);
     el.append(actions);
+  } else {
+    const actions = document.createElement('div');
+    actions.className = 'row actions';
+    const hide = document.createElement('button');
+    hide.className = 'small';
+    hide.textContent = '一覧から消す';
+    hide.title = '送信ページの一覧から消します（台帳の記録は残ります）';
+    hide.addEventListener('click', () => hideItems([it.id], hide));
+    actions.append(hide);
+    el.append(actions);
   }
   return el;
+}
+
+/** 終わったもの（失効・期限切れ）を一覧から消す。台帳の記録は残る */
+async function hideItems(ids, btn) {
+  btn.disabled = true;
+  try {
+    const r = await callGas({ action: 'hide', ...auth(), ids });
+    if (!r.ok) throw new Error(r.error);
+    toast(ids.length > 1 ? `${r.hidden}件を一覧から消しました` : '一覧から消しました');
+  } catch (err) {
+    console.error(err);
+    toast('消せませんでした');
+  }
+  btn.disabled = false;
+  loadList();
 }
 
 function escapeHtml(s) {

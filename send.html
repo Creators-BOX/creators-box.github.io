@@ -86,7 +86,10 @@
     <div class="card">
       <div class="row" style="justify-content:space-between;margin-bottom:12px">
         <h2 style="margin:0">送ったファイル</h2>
-        <button id="reload" class="small" title="一覧を読み込み直します">更新</button>
+        <div class="row">
+          <button id="hideAll" class="small hidden" title="失効・期限切れのものを一覧からまとめて消します（台帳の記録は残ります）">終わったものをまとめて消す</button>
+          <button id="reload" class="small" title="一覧を読み込み直します">更新</button>
+        </div>
       </div>
       <div id="list" class="list"><p class="note">読み込み中…</p></div>
     </div>
